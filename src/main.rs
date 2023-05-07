@@ -1,10 +1,5 @@
-use std::str;
 mod resp;
-use resp::parse_resp_string;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
-};
+use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -13,33 +8,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let (socket, _) = listener.accept().await?;
         tokio::spawn(async move {
-            handle_stream(socket).await;
+            handle_stream(socket).await.unwrap();
         });
     }
 }
 
-async fn handle_stream(mut socket: TcpStream) {
-    let mut buf = [0; 512];
+async fn handle_stream(socket: TcpStream) -> Result<(), anyhow::Error> {
+    let mut connection = resp::RespConnection::new(socket);
+
     loop {
-        let _n = match socket.read(&mut buf).await {
-            // socket closed
-            Ok(n) if n == 0 => return,
-            Ok(n) => n,
-            Err(e) => {
-                eprintln!("failed to read from socket; err = {:?}", e);
-                return;
-            }
-        };
+        let value = connection.read_value().await?;
 
-        let parsed = parse_resp_string(str::from_utf8(&buf).unwrap().trim_matches(char::from(0)));
-        println!("buf: {:#?}", parsed);
-        println!("command: {:#?}", parsed.to_command());
-
-        let reply = "+Hello World\r\n";
-        // Write the data back
-        if let Err(e) = socket.write_all(reply.as_bytes()).await {
-            eprintln!("failed to write to socket; err = {:?}", e);
-            return;
+        if let Some(value) = value {
+            let (command, args) = value.to_command()?;
+            let response = match command {
+                resp::Command::Ping => resp::RESPString::SimpleString("PONG".to_string()),
+                resp::Command::Echo => args[0].clone(),
+                resp::Command::Unknown => resp::RESPString::Error("Unknown command".to_string()),
+            };
+            println!("response: {:#?}", response.encode());
+            connection.write_value(response).await?;
+        } else {
+            break;
         }
     }
+
+    Ok(())
 }

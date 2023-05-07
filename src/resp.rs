@@ -1,8 +1,11 @@
-use std::str::Chars;
+use std::str::{self, Chars};
 
-use anyhow::{Error, Result};
+use anyhow::Error;
 use bytes::BytesMut;
-use tokio::net::TcpStream;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 
@@ -18,17 +21,17 @@ const DELIMITERS: [char; 4] = [':', '+', '-', '$'];
 
 impl RESPString {
     //    Gets the command from the RESPString
-    pub fn to_command(&self) -> Result<String, anyhow::Error> {
+    pub fn to_command(&self) -> Result<(Command, Vec<RESPString>), anyhow::Error> {
         match self {
             RESPString::Array(array) => {
-                let command = array.first().unwrap();
-                command.to_command()
+                let command = array.first().unwrap().to_string();
+
+                return Ok((Command::from_str(&command), array[1..].to_vec()));
             }
-            RESPString::BulkString(string) => Ok(string.to_owned()),
             _ => Err(Error::msg("Invalid command")),
         }
     }
-    // TODO: copilot code, check for correctness
+
     pub fn encode(&self) -> String {
         match self {
             RESPString::SimpleString(string) => format!("+{}\r\n", string),
@@ -44,34 +47,51 @@ impl RESPString {
             }
         }
     }
+
+    fn to_string(&self) -> String {
+        match self {
+            RESPString::SimpleString(string) => string.to_string(),
+            RESPString::Error(string) => string.to_string(),
+            RESPString::Integer(num) => num.to_string(),
+            RESPString::BulkString(string) => string.to_string(),
+            RESPString::Array(array) => {
+                let mut result = String::new();
+                for resp_string in array {
+                    result.push_str(&resp_string.to_string());
+                }
+                result
+            }
+        }
+    }
 }
 
-pub fn parse_resp_string(string: &str) -> RESPString {
+pub fn parse_resp_string(string: &str) -> Result<RESPString, anyhow::Error> {
+    let string = string.trim_matches(char::from(0));
     let chars = string.chars();
     let iter = chars.into_iter();
     let first_char: char = iter.clone().next().unwrap();
 
     let string_type = match first_char {
-        '+' => RESPString::SimpleString(iter.collect()),
-        '-' => RESPString::Error(iter.collect()),
+        '+' => Ok(RESPString::SimpleString(iter.collect())),
+        '-' => Ok(RESPString::Error(iter.collect())),
         ':' => {
             let num = iter.skip(1).collect::<String>().parse::<i64>().unwrap();
-            RESPString::Integer(num)
+            Ok(RESPString::Integer(num))
         }
         '$' => {
             let collect = iter.clone().collect::<String>();
 
             let result_string = collect.chars().into_iter().skip(2).collect::<String>();
-            RESPString::BulkString(result_string.to_owned())
+            Ok(RESPString::BulkString(result_string.to_owned()))
         }
         '*' => parse_bulk_string(iter),
-        _ => panic!("Invalid RESP string"),
+        _ => Err(Error::msg("Invalid RESP string")),
     };
 
     string_type
 }
 
-fn parse_bulk_string(iter: Chars) -> RESPString {
+fn parse_bulk_string(iter: Chars) -> Result<RESPString, anyhow::Error> {
     let collect = iter.clone().collect::<String>();
     let mut split = collect.split("\r\n").collect::<Vec<&str>>();
 
@@ -82,10 +102,12 @@ fn parse_bulk_string(iter: Chars) -> RESPString {
     let mut array: Vec<RESPString> = Vec::with_capacity(2 as usize);
 
     for str in new {
-        array.push(parse_resp_string(&str));
+        if let Ok(resp_string) = parse_resp_string(&str) {
+            array.push(resp_string);
+        }
     }
 
-    RESPString::Array(array)
+    Ok(RESPString::Array(array))
 }
 
 fn combine_strings_with_delimiters(strings: &Vec<&str>, delimiters: &[char]) -> Vec<String> {
@@ -120,12 +142,22 @@ fn combine_strings_with_delimiters(strings: &Vec<&str>, delimiters: &[char]) -> 
     result
 }
 
-enum Commands {
+#[derive(Debug)]
+pub enum Command {
     Ping,
     Echo,
+    Unknown,
 }
 
-impl Commands {}
+impl Command {
+    pub fn from_str(string: &str) -> Command {
+        match string.to_ascii_lowercase().as_ref() {
+            "ping" => Command::Ping,
+            "echo" => Command::Echo,
+            _ => Command::Unknown,
+        }
+    }
+}
 
 pub struct RespConnection {
     stream: TcpStream,
@@ -140,11 +172,26 @@ impl RespConnection {
         }
     }
 
-    pub fn read_stream(&mut self) -> Result<Option<RESPString>> {
-        todo!()
+    pub async fn read_value(&mut self) -> Result<Option<RESPString>, anyhow::Error> {
+        loop {
+            let bytes_read = self.stream.read_buf(&mut self.buffer).await?;
+
+            if bytes_read == 0 {
+                return Ok(None);
+            }
+
+            if let Ok(resp) = parse_resp_string(str::from_utf8(&self.buffer).unwrap()) {
+                // println!("buf: {:#?}", resp);
+                // println!("command: {:#?}", resp.to_command());
+
+                return Ok(Some(resp));
+            }
+        }
     }
 
-    pub fn write_stream(&mut self) -> Result<()> {
-        todo!()
+    pub async fn write_value(&mut self, value: RESPString) -> Result<(), anyhow::Error> {
+        self.stream.write(value.encode().as_bytes()).await?;
+
+        Ok(())
     }
 }
