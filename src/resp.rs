@@ -48,7 +48,7 @@ impl RESPString {
         }
     }
 
-    fn to_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         match self {
             RESPString::SimpleString(string) => string.to_string(),
             RESPString::Error(string) => string.to_string(),
@@ -62,6 +62,14 @@ impl RESPString {
                 result
             }
         }
+    }
+
+    pub fn null_reply() -> RESPString {
+        RESPString::BulkString("$-1\r\n".to_string())
+    }
+
+    pub fn ok_reply() -> RESPString {
+        RESPString::SimpleString("+OK\r\n".to_string())
     }
 }
 
