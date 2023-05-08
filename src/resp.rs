@@ -146,6 +146,8 @@ fn combine_strings_with_delimiters(strings: &Vec<&str>, delimiters: &[char]) -> 
 pub enum Command {
     Ping,
     Echo,
+    Get,
+    Set,
     Unknown,
 }
 
@@ -154,6 +156,8 @@ impl Command {
         match string.to_ascii_lowercase().as_ref() {
             "ping" => Command::Ping,
             "echo" => Command::Echo,
+            "get" => Command::Get,
+            "set" => Command::Set,
             _ => Command::Unknown,
         }
     }
