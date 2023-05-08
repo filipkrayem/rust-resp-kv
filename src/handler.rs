@@ -26,11 +26,8 @@ impl<'a> CommandHandler<'a> {
                 Command::Ping => RESPString::SimpleString("PONG".to_string()),
                 Command::Echo => args[0].clone(),
                 Command::Unknown => RESPString::Error("Unknown command".to_string()),
-                Command::Get => self.handle_get(args.iter().next()).await,
-                Command::Set => {
-                    self.handle_set(args.iter().next(), args.iter().nth(1))
-                        .await
-                }
+                Command::Get => self.handle_get(args.first()).await,
+                Command::Set => self.handle_set(args.first(), args.get(1)).await,
             };
             Ok(response)
         } else {

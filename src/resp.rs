@@ -26,7 +26,7 @@ impl RESPString {
             RESPString::Array(array) => {
                 let command = array.first().unwrap().to_string();
 
-                return Ok((Command::from_str(&command), array[1..].to_vec()));
+                Ok((Command::from_str(&command), array[1..].to_vec()))
             }
             _ => Err(Error::msg("Invalid command")),
         }
@@ -76,23 +76,22 @@ impl RESPString {
 pub fn parse_resp_string(string: &str) -> Result<RESPString, anyhow::Error> {
     let string = string.trim_matches(char::from(0));
     let chars = string.chars();
-    let iter = chars.into_iter();
-    let first_char: char = iter.clone().next().unwrap();
+    let first_char: char = chars.clone().next().unwrap();
 
     let string_type = match first_char {
-        '+' => Ok(RESPString::SimpleString(iter.collect())),
-        '-' => Ok(RESPString::Error(iter.collect())),
+        '+' => Ok(RESPString::SimpleString(chars.collect())),
+        '-' => Ok(RESPString::Error(chars.collect())),
         ':' => {
-            let num = iter.skip(1).collect::<String>().parse::<i64>().unwrap();
+            let num = chars.skip(1).collect::<String>().parse::<i64>().unwrap();
             Ok(RESPString::Integer(num))
         }
         '$' => {
-            let collect = iter.clone().collect::<String>();
+            let collect = chars.clone().collect::<String>();
 
-            let result_string = collect.chars().into_iter().skip(2).collect::<String>();
-            Ok(RESPString::BulkString(result_string.to_owned()))
+            let result_string = collect.chars().skip(2).collect::<String>();
+            Ok(RESPString::BulkString(result_string))
         }
-        '*' => parse_bulk_string(iter),
+        '*' => parse_bulk_string(chars),
         _ => Err(Error::msg("Invalid RESP string")),
     };
 
@@ -107,7 +106,7 @@ fn parse_bulk_string(iter: Chars) -> Result<RESPString, anyhow::Error> {
 
     let new = combine_strings_with_delimiters(&split, &DELIMITERS);
 
-    let mut array: Vec<RESPString> = Vec::with_capacity(2 as usize);
+    let mut array: Vec<RESPString> = Vec::with_capacity(2);
 
     for str in new {
         if let Ok(resp_string) = parse_resp_string(&str) {
@@ -131,7 +130,7 @@ fn combine_strings_with_delimiters(strings: &Vec<&str>, delimiters: &[char]) -> 
         if combine {
             current_string.push_str(string);
         } else {
-            current_string = string.clone().to_owned();
+            current_string = string.to_owned().to_string();
         }
 
         if delimiters.contains(&string.chars().next().unwrap()) {
@@ -206,4 +205,10 @@ impl RespConnection {
 
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn it_should_parse_buffer() {}
 }

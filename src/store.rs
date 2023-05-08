@@ -19,3 +19,17 @@ impl Store {
         self.data.insert(key, value);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn data_inserts() {
+        let mut store = Store::new();
+
+        store.set("foo".to_string(), "bar".to_string());
+
+        assert_eq!(store.get("foo"), Some(&"bar".to_string()));
+    }
+}

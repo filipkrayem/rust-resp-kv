@@ -2,25 +2,24 @@ mod handler;
 mod resp;
 mod store;
 
-use std::sync::Arc;
-
-use handler::CommandHandler;
 use store::Store;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::RwLock,
 };
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind("127.0.0.1:6379").await?;
 
     // initialize the store with atomic reference counting and read write lock to prevent data races and ownership issues
     let store = Arc::new(RwLock::new(Store::new()));
-    // initialize the command handler
+
     loop {
         let (socket, _) = listener.accept().await?;
-        // This creates a new Arc that points to the location of the store
+        // initialize a new Arc clone for each connection
         let store_clone = store.clone();
+
         tokio::spawn(async move {
             handle_stream(socket, &store_clone).await.unwrap();
         });
